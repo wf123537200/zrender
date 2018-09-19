@@ -47,7 +47,7 @@ var Animation = function (options) {
 
     this.stage = options.stage || {};
 
-    this.onframe = options.onframe || function() {};
+    this.onframe = options.onframe || function () {};
 
     // private properties
     this._clips = [];
@@ -68,6 +68,7 @@ var Animation = function (options) {
 Animation.prototype = {
 
     constructor: Animation,
+
     /**
      * 添加 clip
      * @param {module:zrender/animation/Clip} clip
@@ -75,6 +76,7 @@ Animation.prototype = {
     addClip: function (clip) {
         this._clips.push(clip);
     },
+
     /**
      * 添加 animator
      * @param {module:zrender/animation/Animator} animator
@@ -86,11 +88,12 @@ Animation.prototype = {
             this.addClip(clips[i]);
         }
     },
+
     /**
      * 删除动画片段
      * @param {module:zrender/animation/Clip} clip
      */
-    removeClip: function(clip) {
+    removeClip: function (clip) {
         var idx = util.indexOf(this._clips, clip);
         if (idx >= 0) {
             this._clips.splice(idx, 1);
@@ -109,7 +112,7 @@ Animation.prototype = {
         animator.animation = null;
     },
 
-    _update: function() {
+    _update: function () {
         var time = new Date().getTime() - this._pausedTime;
         var delta = time - this._time;
         var clips = this._clips;
@@ -117,6 +120,7 @@ Animation.prototype = {
 
         var deferredEvents = [];
         var deferredClips = [];
+
         for (var i = 0; i < len; i++) {
             var clip = clips[i];
             var e = clip.step(time, delta);

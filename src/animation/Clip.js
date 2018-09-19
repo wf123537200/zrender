@@ -6,6 +6,7 @@
  * @config loop(true)
  * @config gap(0) 循环的间隔时间
  * @config onframe
+ * @config onpostframe
  * @config easing(optional)
  * @config ondestroy(optional)
  * @config onrestart(optional)
@@ -32,9 +33,10 @@ function Clip(options) {
 
     this.gap = options.gap || 0;
 
-    this.easing = options.easing || 'Linear';
+    this.easing = options.easing || 'linear';
 
     this.onframe = options.onframe;
+    this.onpostframe = options.onpostframe;
     this.ondestroy = options.ondestroy;
     this.onrestart = options.onrestart;
 
@@ -79,7 +81,7 @@ Clip.prototype = {
         // 结束
         if (percent == 1) {
             if (this.loop) {
-                this.restart (globalTime);
+                this.restart(globalTime);
                 // 重新开始周期
                 // 抛出而不是直接调用事件直到 stage.update 后再统一调用这些事件
                 return 'restart';

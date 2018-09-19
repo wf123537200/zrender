@@ -221,13 +221,8 @@ Element.prototype = {
      */
     addSelfToZr: function (zr) {
         this.__zr = zr;
-        // 添加动画
-        var animators = this.animators;
-        if (animators) {
-            for (var i = 0; i < animators.length; i++) {
-                zr.animation.addAnimator(animators[i]);
-            }
-        }
+
+        Animatable.addSelfToZr(this);
 
         if (this.clipPath) {
             this.clipPath.addSelfToZr(zr);
@@ -241,13 +236,8 @@ Element.prototype = {
      */
     removeSelfFromZr: function (zr) {
         this.__zr = null;
-        // 移除动画
-        var animators = this.animators;
-        if (animators) {
-            for (var i = 0; i < animators.length; i++) {
-                zr.animation.removeAnimator(animators[i]);
-            }
-        }
+
+        Animatable.removeSelfFromZr(this);
 
         if (this.clipPath) {
             this.clipPath.removeSelfFromZr(zr);
