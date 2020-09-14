@@ -119,7 +119,7 @@
         );
 
         root.decomposeTransform();
-        root.dirty();
+        root.dirty(true);
 
         var handler = rootRecord.handler;
         handler && handler(root);

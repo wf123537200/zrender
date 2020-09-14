@@ -11,10 +11,9 @@
     <script type="text/javascript">
     requireES(
         [
-            'zrender/esm/zrender',
-            'zrender/esm/animation/animation',
-            'zrender/esm/graphic/shape/Polygon',
-            'zrender/esm/canvas/canvas'
+            'zrender/src/zrender',
+            'zrender/src/animation/animation',
+            'zrender/src/graphic/shape/Polygon'
         ],
         function(zrender, Animation, PolygonShape){
 
@@ -43,7 +42,7 @@
                     shape: {
                         points: points
                     }
-                }, { duration: 500, easing: 'cubicOut' });
+                }, 500, 'cubicOut');
             }, 1000);
             zr.add(polygon);
         });
