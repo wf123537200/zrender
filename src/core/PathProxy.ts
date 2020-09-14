@@ -57,6 +57,54 @@ const PI2 = PI * 2;
 
 const hasTypedArray = typeof Float32Array !== 'undefined';
 
+const tmpAngles: number[] = [];
+
+function modPI2(radian: number) {
+    // It's much more stable to mod N instedof PI
+    const n = Math.round(radian / PI * 1e5) / 1e5;
+    return (n % 2) * PI;
+}
+/**
+ * Normalize start and end angles.
+ * startAngle will be normalized to 0 ~ PI*2
+ * sweepAngle(endAngle - startAngle) will be normalized to 0 ~ PI*2 if clockwise.
+ * -PI*2 ~ 0 if anticlockwise.
+ */
+export function normalizeArcAngles(angles: number[], anticlockwise: boolean): void {
+    let newStartAngle = modPI2(angles[0]);
+    if (newStartAngle < 0) {
+        // Normlize to 0 - PI2
+        newStartAngle += PI2;
+    }
+
+    let delta = newStartAngle - angles[0];
+    let newEndAngle = angles[1];
+    newEndAngle += delta;
+
+    // https://github.com/chromium/chromium/blob/c20d681c9c067c4e15bb1408f17114b9e8cba294/third_party/blink/renderer/modules/canvas/canvas2d/canvas_path.cc#L184
+    // Is circle
+    if (!anticlockwise && newEndAngle - newStartAngle >= PI2) {
+        newEndAngle = newStartAngle + PI2;
+    }
+    else if (anticlockwise && newStartAngle - newEndAngle >= PI2) {
+        newEndAngle = newStartAngle - PI2;
+    }
+    // Make startAngle < endAngle when clockwise, otherwise endAngle < startAngle.
+    // The sweep angle can never been larger than P2.
+    else if (!anticlockwise && newStartAngle > newEndAngle) {
+        newEndAngle = newStartAngle +
+            (PI2 - modPI2(newStartAngle - newEndAngle));
+    }
+    else if (anticlockwise && newStartAngle < newEndAngle) {
+        newEndAngle = newStartAngle -
+            (PI2 - modPI2(newEndAngle - newStartAngle));
+    }
+
+    angles[0] = newStartAngle;
+    angles[1] = newEndAngle;
+}
+
+
 export default class PathProxy {
 
     dpr = 1
@@ -214,29 +262,15 @@ export default class PathProxy {
     }
 
     arc(cx: number, cy: number, r: number, startAngle: number, endAngle: number, anticlockwise?: boolean) {
-        // Normalize delta to 0 - PI2
+        tmpAngles[0] = startAngle;
+        tmpAngles[1] = endAngle;
+        normalizeArcAngles(tmpAngles, anticlockwise);
+
+        startAngle = tmpAngles[0];
+        endAngle = tmpAngles[1];
+
         let delta = endAngle - startAngle;
 
-        if (delta < 0) {
-            const n = Math.round(delta / PI * 1e6) / 1e6;
-            // Convert to positive
-            // It's much more stable to mod N.
-            delta = PI2 + (n % 2) * PI;
-        }
-        else {
-            delta = mathMin(delta, PI2);
-        }
-
-        // Convert to -PI2 ~ PI2, -PI2 is anticlockwise
-        if (anticlockwise && delta > 0) {
-            // Convert delta to negative
-            delta = delta - PI2;
-            if (Math.abs(delta) < 1e-6) {   // is circle.
-                delta = delta - PI2;
-            }
-        }
-
-        endAngle = startAngle + delta;
 
         this.addData(
             CMD.A, cx, cy, r, r, startAngle, delta, 0, anticlockwise ? 0 : 1
@@ -575,7 +609,8 @@ export default class PathProxy {
         for (i = 0; i < data.length;) {
             const cmd = data[i++] as number;
 
-            if (i === 1) {
+            const isFirst = i === 1;
+            if (isFirst) {
                 // 如果第一个命令是 L, C, Q
                 // 则 previous point 同绘制命令的第一个 point
                 // 第一个命令为 Arc 的情况下会在后面特殊处理
@@ -619,7 +654,6 @@ export default class PathProxy {
                     yi = data[i++];
                     break;
                 case CMD.A:
-                    // TODO Arc 判断的开销比较大
                     const cx = data[i++];
                     const cy = data[i++];
                     const rx = data[i++];
@@ -628,9 +662,9 @@ export default class PathProxy {
                     const endAngle = data[i++] + startAngle;
                     // TODO Arc 旋转
                     i += 1;
-                    const anticlockwise = 1 - data[i++];
+                    const anticlockwise = !data[i++];
 
-                    if (i === 1) {
+                    if (isFirst) {
                         // 直接使用 arc 命令
                         // 第一个命令起点还未定义
                         x0 = mathCos(startAngle) * rx + cx;
@@ -639,7 +673,7 @@ export default class PathProxy {
 
                     fromArc(
                         cx, cy, rx, ry, startAngle, endAngle,
-                        !!anticlockwise, min2, max2
+                        anticlockwise, min2, max2
                     );
 
                     xi = mathCos(endAngle) * rx + cx;
@@ -693,8 +727,9 @@ export default class PathProxy {
 
         for (let i = 0; i < len;) {
             const cmd = data[i++] as number;
+            const isFirst = i === 1;
 
-            if (i === 1) {
+            if (isFirst) {
                 // 如果第一个命令是 L, C, Q
                 // 则 previous point 同绘制命令的第一个 point
                 // 第一个命令为 Arc 的情况下会在后面特殊处理
@@ -762,7 +797,7 @@ export default class PathProxy {
                     i += 1;
                     const anticlockwise = !data[i++];
 
-                    if (i === 1) {
+                    if (isFirst) {
                         // 直接使用 arc 命令
                         // 第一个命令起点还未定义
                         x0 = mathCos(startAngle) * rx + cx;
@@ -843,8 +878,9 @@ export default class PathProxy {
 
         lo: for (let i = 0; i < len;) {
             const cmd = d[i++];
+            const isFirst = i === 1;
 
-            if (i === 1) {
+            if (isFirst) {
                 // 如果第一个命令是 L, C, Q
                 // 则 previous point 同绘制命令的第一个 point
                 // 第一个命令为 Arc 的情况下会在后面特殊处理
@@ -969,7 +1005,7 @@ export default class PathProxy {
                         break lo;
                     }
 
-                    if (i === 1) {
+                    if (isFirst) {
                         // 直接使用 arc 命令
                         // 第一个命令起点还未定义
                         x0 = mathCos(startAngle) * rx + cx;

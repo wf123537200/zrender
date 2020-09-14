@@ -14,15 +14,15 @@ type InterpolatableType = string | number | NumberArray | NumberArray[];
 
 const arraySlice = Array.prototype.slice;
 
-function interpolateNumber(p0: number, p1: number, percent: number): number {
+export function interpolateNumber(p0: number, p1: number, percent: number): number {
     return (p1 - p0) * percent + p0;
 }
 
-function step(p0: any, p1: any, percent: number): any {
+export function step(p0: any, p1: any, percent: number): any {
     return percent > 0.5 ? p1 : p0;
 }
 
-function interpolate1DArray(
+export function interpolate1DArray(
     out: NumberArray,
     p0: NumberArray,
     p1: NumberArray,
@@ -35,7 +35,7 @@ function interpolate1DArray(
     }
 }
 
-function interpolate2DArray(
+export function interpolate2DArray(
     out: NumberArray[],
     p0: NumberArray[],
     p1: NumberArray[],
@@ -665,7 +665,8 @@ class Track {
 
 
 type DoneCallback = () => void;
-type OnframeCallback<T> = (target: T, percent: number) => void;
+type AbortCallback = () => void;
+export type OnframeCallback<T> = (target: T, percent: number) => void;
 
 export type AnimationPropGetter<T> = (target: T, key: string) => InterpolatableType;
 export type AnimationPropSetter<T> = (target: T, key: string, value: InterpolatableType) => void;
@@ -675,6 +676,8 @@ export default class Animator<T> {
     animation?: Animation
 
     targetName?: string
+
+    scope?: string
 
     __fromStateTransition?: string
 
@@ -694,21 +697,23 @@ export default class Animator<T> {
     // 2: Has been run for at least one frame.
     private _started = 0
 
-    private _additiveAnimator: Animator<any>
+    private _additiveAnimators: Animator<any>[]
 
-    private _doneList: DoneCallback[] = []
-    private _onframeList: OnframeCallback<T>[] = []
+    private _doneList: DoneCallback[]
+    private _onframeList: OnframeCallback<T>[]
+
+    private _abortedList: AbortCallback[]
 
     private _clip: Clip = null
 
-    constructor(target: T, loop: boolean, additiveTo?: Animator<any>) {
+    constructor(target: T, loop: boolean, additiveTo?: Animator<any>[]) {
         this._target = target;
         this._loop = loop;
         if (loop) {
             logError('Can\' use additive animation on looped animation.');
             return;
         }
-        this._additiveAnimator = additiveTo;
+        this._additiveAnimators = additiveTo;
     }
 
     getTarget() {
@@ -745,7 +750,7 @@ export default class Animator<T> {
                 track = tracks[propName] = new Track(propName);
 
                 let initialValue;
-                const additiveTrack = this._additiveAnimator && this._additiveAnimator.getTrack(propName);
+                const additiveTrack = this._getAdditiveTrack(propName);
                 if (additiveTrack) {
                     const lastFinalKf = additiveTrack.keyframes[additiveTrack.keyframes.length - 1];
                     // Use the last state of additived animator.
@@ -780,15 +785,6 @@ export default class Animator<T> {
         return this;
     }
 
-    /**
-     * 添加动画每一帧的回调函数
-     * @param callback
-     */
-    during(callback: OnframeCallback<T>) {
-        this._onframeList.push(callback);
-        return this;
-    }
-
     pause() {
         this._clip.pause();
         this._paused = true;
@@ -803,17 +799,50 @@ export default class Animator<T> {
         return !!this._paused;
     }
 
-    _doneCallback() {
+    private _doneCallback() {
         // Clear all tracks
         this._tracks = null;
         // Clear clip
         this._clip = null;
 
         const doneList = this._doneList;
-        const len = doneList.length;
-        for (let i = 0; i < len; i++) {
-            doneList[i].call(this);
+        if (doneList) {
+            const len = doneList.length;
+            for (let i = 0; i < len; i++) {
+                doneList[i].call(this);
+            }
         }
+    }
+
+    private _abortedCallback() {
+        const animation = this.animation;
+        const abortedList = this._abortedList;
+
+        if (animation) {
+            animation.removeClip(this._clip);
+        }
+        this._clip = null;
+
+        if (abortedList) {
+            for (let i = 0; i < abortedList.length; i++) {
+                abortedList[i].call(this);
+            }
+        }
+    }
+
+    private _getAdditiveTrack(trackName: string): Track {
+        let additiveTrack;
+        const additiveAnimators = this._additiveAnimators;
+        if (additiveAnimators) {
+            for (let i = 0; i < additiveAnimators.length; i++) {
+                const track = additiveAnimators[i].getTrack(trackName);
+                if (track) {
+                    // Use the track of latest animator.
+                    additiveTrack = track;
+                }
+            }
+        }
+        return additiveTrack;
     }
     /**
      * Start the animation
@@ -833,7 +862,7 @@ export default class Animator<T> {
         for (let i = 0; i < this._trackKeys.length; i++) {
             const propName = this._trackKeys[i];
             const track = this._tracks[propName];
-            const additiveTrack = this._additiveAnimator && this._additiveAnimator.getTrack(propName);
+            const additiveTrack = this._getAdditiveTrack(propName)
             const kfs = track.keyframes;
             track.prepare(additiveTrack);
             if (track.needsAnimate()) {
@@ -857,16 +886,30 @@ export default class Animator<T> {
                     self._started = 2;
                     // Remove additived animator if it's finished.
                     // For the purpose of memory effeciency.
-                    if (self._additiveAnimator && !self._additiveAnimator._clip) {
-                        self._additiveAnimator = null;
+                    const additiveAnimators = self._additiveAnimators;
+                    if (additiveAnimators) {
+                        let stillHasAdditiveAnimator = false;
+                        for (let i = 0; i < additiveAnimators.length; i++) {
+                            if (additiveAnimators[i]._clip) {
+                                stillHasAdditiveAnimator = true;
+                                break;
+                            }
+                        }
+                        if (!stillHasAdditiveAnimator) {
+                            self._additiveAnimators = null;
+                        }
                     }
+
                     for (let i = 0; i < tracks.length; i++) {
                         // NOTE: don't cache target outside.
                         // Because target may be changed.
                         tracks[i].step(self._target, percent);
                     }
-                    for (let i = 0; i < self._onframeList.length; i++) {
-                        self._onframeList[i](self._target, percent);
+                    const onframeList = self._onframeList;
+                    if (onframeList) {
+                        for (let i = 0; i < onframeList.length; i++) {
+                            onframeList[i](self._target, percent);
+                        }
                     }
                 },
                 ondestroy() {
@@ -904,15 +947,12 @@ export default class Animator<T> {
             return;
         }
         const clip = this._clip;
-        const animation = this.animation;
         if (forwardToLast) {
             // Move to last frame before stop
             clip.onframe(1);
         }
-        if (animation) {
-            animation.removeClip(clip);
-        }
-        this._clip = null;
+
+        this._abortedCallback();
     }
     /**
      * Set when animation delay starts
@@ -923,12 +963,38 @@ export default class Animator<T> {
         return this;
     }
     /**
+     * 添加动画每一帧的回调函数
+     * @param callback
+     */
+    during(cb: OnframeCallback<T>) {
+        if (cb) {
+            if (!this._onframeList) {
+                this._onframeList = [];
+            }
+            this._onframeList.push(cb);
+        }
+        return this;
+    }
+    /**
      * Add callback for animation end
      * @param cb
      */
     done(cb: DoneCallback) {
         if (cb) {
+            if (!this._doneList) {
+                this._doneList = [];
+            }
             this._doneList.push(cb);
+        }
+        return this;
+    }
+
+    aborted(cb: AbortCallback) {
+        if (cb) {
+            if (!this._abortedList) {
+                this._abortedList = [];
+            }
+            this._abortedList.push(cb);
         }
         return this;
     }
@@ -977,9 +1043,8 @@ export default class Animator<T> {
             }
         }
         // Remove clip if all tracks has been aborted.
-        if (allAborted && this.animation) {
-            this.animation.removeClip(this._clip);
-            this._clip = null;
+        if (allAborted) {
+            this._abortedCallback();
         }
 
         return allAborted;
@@ -1034,10 +1099,12 @@ export default class Animator<T> {
             if (kfs.length > 1) {
                 // Remove the original last kf and add again.
                 const lastKf = kfs.pop();
+
                 track.addKeyframe(lastKf.time, finalProps[propName]);
                 // Prepare again.
                 track.prepare(track.getAdditiveTrack());
             }
         }
     }
+
 }
